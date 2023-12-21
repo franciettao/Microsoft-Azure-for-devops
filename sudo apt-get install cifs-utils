@@ -1,0 +1,26 @@
+sudo apt-get install cifs-utils
+[14:57]
+#!/bin/bash
+
+Créer un répertoire s'il n'existe pas
+sudo mkdir -p /mnt/share-doc-con
+
+Vérifier et créer un répertoire s'il n'existe pas
+if [ ! -d "/etc/smbcredentials" ]; then
+    sudo mkdir -p /etc/smbcredentials
+fi
+
+Vérifier et créer un fichier avec les informations d'identification s'il n'existe pas
+if [ ! -f "/etc/smbcredentials/grp2stock.cred" ]; then
+    sudo bash -c 'echo "username=grp2stock" >> /etc/smbcredentials/grp2stock.cred'
+    sudo bash -c 'echo "password=GFEcQ308sbPZwnTshukzxOQn0w6J/AgYQ0MNGr3OsB8g6S7dWUPt66M11JNo/Ul5Yz/Rdgg/qn/Q+AStNt6B6g==" >> /etc/smbcredentials/grp2stock.cred'
+fi
+
+Définir les permissions pour le fichier d'informations d'identification
+sudo chmod 600 /etc/smbcredentials/grp2stock.cred
+
+Ajouter une entrée de montage à /etc/fstab
+sudo bash -c 'echo "//grp2stock.file.core.windows.net/share-doc-con /mnt/share-doc-con cifs nofail,credentials=/etc/smbcredentials/grp2stock.cred,dir_mode=0777,file_mode=0777,serverino,nosharesock,actimeo=30" >> /etc/fstab'
+
+Monter le lecteur réseau
+sudo mount -t cifs //grp2stock.file.core.windows.net/share-doc-con /mnt/share-doc-con -o credentials=/etc/smbcredentials/grp2stock.cred,dir_mode=0777,file_mode=0777,serverino,nosharesock,actimeo=30
