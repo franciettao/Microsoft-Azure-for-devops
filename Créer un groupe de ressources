@@ -1,0 +1,65 @@
+Créer un groupe de ressources
+az group create --name GRP1 --location VOTRE_EMPLACEMENT
+
+Créer un réseau virtuel avec une adresse IP 10.0.0.0/16
+az network vnet create --resource-group GRP1 --name monVnet --address-prefixes 10.0.0.0/16 --subnet-name Subnet1 --subnet-prefixes 10.0.1.0/24
+
+Créer le premier sous-réseau Subnet1
+az network vnet subnet create --resource-group GRP1 --vnet-name monVnet --name Subnet1 --address-prefixes 10.0.1.0/24
+
+Créer le deuxième sous-réseau Subnet2
+az network vnet subnet create --resource-group GRP1 --vnet-name monVnet --name Subnet2 --address-prefixes 10.0.2.0/24
+
+Créer la première carte réseau et l'associer à Subnet1
+az network nic create --resource-group GRP1 --name maCarteReseau1 --vnet-name monVnet --subnet Subnet1
+
+Créer la deuxième carte réseau et l'associer à Subnet2
+az network nic create --resource-group GRP1 --name maCarteReseau2 --vnet-name monVnet --subnet Subnet2
+
+
+# Création du groupe de ressources
+$GRP1 = "GRP1"
+$location = "NorthEurope"
+New-AzResourceGroup -Name $GRP1 -Location $location
+
+# Création du réseau virtuel avec 4 sous-réseaux
+$myVnet1 = New-AzVirtualNetwork -ResourceGroupName $GRP1 -Location $location -Name "myVnet" -AddressPrefix "10.0.0.0/16"
+
+# Ajout des configurations de sous-réseaux au réseau virtuel
+Add-AzVirtualNetworkSubnetConfig -Name "myNetUbuntu" -AddressPrefix "10.0.1.0/24" -VirtualNetwork $myVnet1
+Add-AzVirtualNetworkSubnetConfig -Name "myNetMicrosoft" -AddressPrefix "10.0.2.0/24" -VirtualNetwork $myVnet1
+Add-AzVirtualNetworkSubnetConfig -Name "mySubnet3" -AddressPrefix "10.0.3.0/24" -VirtualNetwork $myVnet1
+Add-AzVirtualNetworkSubnetConfig -Name "mySubnetBastion" -AddressPrefix "10.0.4.0/26" -VirtualNetwork $myVnet1
+
+# Appliquer la configuration des sous-réseaux au réseau virtuel
+$myVnet1 | Set-AzVirtualNetwork
+
+# Création des informations d'identification pour la machine virtuelle
+$username = "azureuser"
+$password = ConvertTo-SecureString "Azerty123456" -AsPlainText -Force
+$credentials = New-Object System.Management.Automation.PSCredential($username, $password)
+
+# Création du groupe de sécurité réseau (NSG) avec des règles pour les ports SSH, RDP et HTTP
+az network nsg create -g $GRP1 -n myNsg --nsg-rule SSHRule --priority 1000 --access Allow --destination-port-ranges 22 --rule RDPRule --priority 1010 --access Allow --destination-port-ranges 3389 --rule HTTPRule --priority 1020 --access Allow --destination-port-ranges 80
+
+# Création de deux cartes réseau (NIC) liées au réseau virtuel et au NSG
+az network nic create -g $GRP1 --vnet-name myVnet --subnet myNetUbuntu -n myNic1 --network-security-group myNsg
+az network nic create -g $GRP1 --vnet-name myVnet --subnet myNetMicrosoft -n myNic2 --network-security-group myNsg
+
+# Création de la machine virtuelle associée aux cartes réseau créées
+az vm create --name myVm -g $GRP1 --image "Ubuntu2204" --size "Standard_B1ls" --authentication-type password --admin-password $password --admin-username $username --location $location --nics myNic1
+
+# Création du service Bastion
+az network bastion create --name myBastion --resource-group $GRP1 --location $location --vnet-name myVnet --public-ip-address myBastionIP
+# Création de la carte réseau pour la machine virtuelle associée au sous-réseau destiné à la VM
+az network nic create -g $GRP1 --vnet-name myVnet --subnet myNetMicrosoft -n myNic3 --network-security-group myNsg
+
+# Création de la machine virtuelle avec la NIC associée
+az vm create --name myVMMicrosoft -g $GRP1 --image "WindowsServer" --size "Standard_D2_v3" --authentication-type password --admin-password $password --admin-username $username --location $location --nics myNic3
+
+# Suppression de l'adresse IP publique de la machine virtuelle
+az network public-ip delete --ids $(az network public-ip list --query "[?contains(ipAddress, 'myVMMicrosoft')].id" -o tsv)
+
+# Configuration du NSG de la machine virtuelle pour limiter l'accès au Bastion
+az network nsg rule create -g $GRP1 --nsg-name myNsg --name AllowBastion --priority 2000 --access Allow --direction Inbound --source-address-prefixes "AzureBastionSubnet" --source-port-ranges "*" --destination-address-prefixes "*" --destination-port-ranges 3389
+
